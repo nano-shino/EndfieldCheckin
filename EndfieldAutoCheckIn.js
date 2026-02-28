@@ -7,8 +7,8 @@
 // 1. SETUP & CONFIGURATION
 // ==========================================
 
-// Get this from: DevTools > Application > Cookies > .skport.com > ACCOUNT_TOKEN
-const ACCOUNT_TOKEN = "YOUR_ACCOUNT_TOKEN_HERE";
+// Log into SKPORT then go to https://web-api.skport.com/cookie_store/account_token and copy the code here
+const ACCOUNT_TOKEN = "";
 
 // (Optional) Paste Discord Webhook URL. Leave empty "" to disable.
 const DISCORD_WEBHOOK_URL = "";
@@ -76,7 +76,7 @@ function performCheckIn() {
     Logger.log("Starting Endfield Check-in...");
 
     // 1. Auth Flow
-    const oauthCode = getOAuthCode(ACCOUNT_TOKEN);
+    const oauthCode = getOAuthCode(decodeURIComponent(ACCOUNT_TOKEN));
     if (!oauthCode) throw new Error("Failed to get OAuth Code (Check ACCOUNT_TOKEN)");
 
     const cred = getCred(oauthCode);
@@ -85,62 +85,60 @@ function performCheckIn() {
     const signToken = getSignToken(cred);
     if (!signToken) throw new Error("Failed to get Sign Token");
 
-    const gameRole = getPlayerBinding(cred, signToken);
+    const gameRoles = getPlayerBinding(cred, signToken);
 
     // 2. Attendance Request
-    const response = sendAttendanceRequest(cred, signToken, gameRole);
-    Logger.log("API Response: " + JSON.stringify(response));
-
-    // 3. Process Result & Notify
-    handleResponse(response);
+    for (const gameRole of gameRoles) {
+      const response = sendAttendanceRequest(cred, signToken, gameRole);
+      Logger.log("API Response: " + JSON.stringify(response));
+      handleResponse(gameRole, response);
+    }
 }
 
 // --- RESULT HANDLER ---
 
-function handleResponse(json) {
+function handleResponse(gameRole, json) {
     const code = json.code;
     const msg = json.message || "";
 
     // Success (Code 0)
     if (code === 0) {
         const rewards = parseRewards(json.data);
-        const dayCount = json.data.signInCount || "?";
-
-        const desc = `**Status:** Signed in successfully!\n**Days Signed:** ${dayCount}\n**Rewards:** ${rewards}`;
+        const desc = `**Status:** Signed in successfully!\n**Rewards:** ${rewards}`;
         Logger.log("Success: " + rewards);
-        sendDiscordWebhook("Endfield Attendance Success", desc, 5763719); // Green
+        sendDiscordWebhook("Endfield Attendance Success", desc, gameRole, 5763719); // Green
     }
     // Already Signed In
     else if (code === 1001 || code === 10001 || msg.toLowerCase().includes("already")) {
         Logger.log("Already signed in today.");
-        sendDiscordWebhook("Endfield Attendance Info", "You have already signed in today.", 16776960); // Yellow
+        sendDiscordWebhook("Endfield Attendance Info", "You have already signed in today.", gameRole, 16776960); // Yellow
     }
     // Token Expired / Error
     else if (code === 10002) {
         Logger.log("Token Expired.");
-        sendDiscordWebhook("Endfield Login Failed", "Account Token is expired. Please update the script.", 15548997); // Red
+        sendDiscordWebhook("Endfield Login Failed", "Account Token is expired. Please update the script.", gameRole, 15548997); // Red
     }
     // Unknown Error
     else {
         Logger.log("Unknown API Error: " + msg);
-        sendDiscordWebhook("Endfield Attendance Error", `API Code: ${code}\nMessage: ${msg}`, 15548997); // Red
+        sendDiscordWebhook("Endfield Attendance Error", `API Code: ${code}\nMessage: ${msg}`, gameRole, 15548997); // Red
     }
 }
 
 // --- DISCORD WEBHOOK ---
 
-function sendDiscordWebhook(title, description, color) {
+function sendDiscordWebhook(title, description, footer, color) {
     if (!DISCORD_WEBHOOK_URL || DISCORD_WEBHOOK_URL.trim() === "") return;
 
     const payload = {
         username: "Endfield Assistant",
-        avatar_url: "https://web.hycdn.cn/endfield/official/icon/logo.png",
+        avatar_url: "https://static.skport.com/asset/game/endfield_740c9ea5dd44bf4a3e6932c595e30a26.png",
         embeds: [{
             title: title,
             description: description,
             color: color,
             timestamp: new Date().toISOString(),
-            footer: { text: "Google Apps Script Automation" }
+            footer: { text: footer }
         }]
     };
 
@@ -212,18 +210,20 @@ function getPlayerBinding(cred, signToken) {
     const options = { method: 'get', headers: headers, muteHttpExceptions: true };
     const response = UrlFetchApp.fetch(CONSTANTS.URLS.BINDING, options);
     const json = JSON.parse(response.getContentText());
+    let roles = [];
 
     if (json.code === 0 && json.data && json.data.list) {
         const apps = json.data.list;
         for (let i = 0; i < apps.length; i++) {
             if (apps[i].appCode === "endfield" && apps[i].bindingList) {
                 const binding = apps[i].bindingList[0];
-                const role = binding.defaultRole || (binding.roles && binding.roles[0]);
-                if (role) return `${CONSTANTS.ENDFIELD_GAME_ID}_${role.roleId}_${role.serverId}`;
+                for (const role of binding.roles) {
+                  roles.push(`${CONSTANTS.ENDFIELD_GAME_ID}_${role.roleId}_${role.serverId}`);
+                }
             }
         }
     }
-    return null;
+    return roles;
 }
 
 function sendAttendanceRequest(cred, signToken, gameRole) {
