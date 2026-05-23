@@ -1,7 +1,7 @@
 # Arknights: Endfield Daily Sign-in Script (Google Apps Script)
 
 This is a **Google Apps Script** that automates the daily sign-in process for **Arknights: Endfield** (SKPORT/Gryphline). It runs automatically on Google's servers, so you don't need to keep your computer on.
-This script is working as of March 1st 2026. It can handle accounts with multiple regions, if you play on both Asia and America/Europe like me.
+This script is working as of May 23 2026. It can handle accounts with multiple regions, if you play on both Asia and America/Europe like me.
 
 ## 🚀 Setup Instructions
 
@@ -58,8 +58,6 @@ If you want to receive a notification on Discord when the script runs:
 ---
 
 ## ❓ FAQ & Troubleshooting
-
-**Q: The script failed with "Token Expired".** A: The `ACCOUNT_TOKEN` may expire after a few weeks or months, or if you log out of the website manually. Simply repeat **Step 1** to get a new token and update the script variable.
 
 **Q: How do I test if it works right now?** A: In the script editor, select the function **`main`** from the dropdown and click **Run**. Check the logs or your Discord channel for the result.
 
