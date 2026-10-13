@@ -7,11 +7,17 @@
 // 1. SETUP & CONFIGURATION
 // ==========================================
 
+// Runs in Node too (node EndfieldAutoCheckIn.js). Node reads secrets from a .env file next to this script.
+const IS_NODE = typeof process !== "undefined" && !!process.versions?.node;
+if (IS_NODE) loadNodeEnv();
+
 // Log into SKPORT then go to https://web-api.skport.com/cookie_store/account_token and copy the code here
-const ACCOUNT_TOKEN = "";
+// (Node: leave empty and set ACCOUNT_TOKEN in .env. A value pasted here takes precedence.)
+const ACCOUNT_TOKEN = "" || envValue("ACCOUNT_TOKEN");
 
 // (Optional) Paste Discord Webhook URL. Leave empty "" to disable.
-const DISCORD_WEBHOOK_URL = "";
+// (Node: set DISCORD_WEBHOOK_URL in .env instead.)
+const DISCORD_WEBHOOK_URL = "" || envValue("DISCORD_WEBHOOK_URL");
 
 
 // ==========================================
@@ -232,7 +238,9 @@ function sendAttendanceRequest(cred, signToken, gameRole) {
     const signature = computeSign(path, "", timestamp, signToken);
     const headers = {
         "cred": cred, "platform": CONSTANTS.PLATFORM, "vname": CONSTANTS.VNAME, "timestamp": timestamp,
-        "sk-language": "en", "sign": signature, "Content-Type": "application/json"
+        "sk-language": "en", "sign": signature, "Content-Type": "application/json",
+        "origin": "https://game.skport.com", "referer": "https://game.skport.com/",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
     };
     if (gameRole) headers["sk-game-role"] = gameRole;
     const options = { method: 'post', headers: headers, muteHttpExceptions: true };
@@ -254,4 +262,75 @@ function computeSign(path, body, timestamp, signToken) {
 
 function bytesToHex(bytes) {
     return bytes.map(function (byte) { return ('0' + (byte & 0xFF).toString(16)).slice(-2); }).join('');
+}
+
+// ==========================================
+// 5. NODE.JS SUPPORT
+// Only runs when executed with Node. Apps Script ignores this section.
+// ==========================================
+
+function envValue(name) {
+    return (IS_NODE && process.env[name]) || "";
+}
+
+function loadNodeEnv() {
+    const envFile = require("path").join(__dirname, ".env");
+    if (require("fs").existsSync(envFile)) process.loadEnvFile(envFile);
+}
+
+// Provides the Apps Script globals (UrlFetchApp, Utilities, Logger) on top of Node.
+function installNodeGlobals() {
+    const crypto = require("crypto");
+    const { spawnSync } = require("child_process");
+
+    // Apps Script's UrlFetchApp is synchronous, but Node's fetch is not. Each request runs in a
+    // child Node process that performs the fetch and returns the result over stdout.
+    const HTTP_WORKER = `
+let input = "";
+process.stdin.on("data", (d) => (input += d)).on("end", async () => {
+    const o = JSON.parse(input);
+    const res = await fetch(o.url, { method: o.method, headers: o.headers, body: o.body });
+    process.stdout.write(JSON.stringify({ status: res.status, text: await res.text() }));
+});`;
+
+    function httpSync(url, method, headers, body) {
+        const result = spawnSync(process.execPath, ["-e", HTTP_WORKER], {
+            input: JSON.stringify({ url, method, headers, body }),
+            encoding: "utf8",
+            maxBuffer: 16 * 1024 * 1024,
+        });
+        if (result.status !== 0) throw new Error(`HTTP request failed: ${result.stderr}`);
+        return JSON.parse(result.stdout);
+    }
+
+    globalThis.Logger = {
+        log: (msg) => console.log(`[${new Date().toISOString()}] ${msg}`),
+    };
+
+    globalThis.UrlFetchApp = {
+        fetch(url, options = {}) {
+            const headers = { ...(options.headers || {}) };
+            if (options.contentType) headers["Content-Type"] = options.contentType;
+            const res = httpSync(url, (options.method || "get").toUpperCase(), headers, options.payload);
+            return { getContentText: () => res.text, getResponseCode: () => res.status };
+        },
+    };
+
+    globalThis.Utilities = {
+        DigestAlgorithm: { MD5: "MD5" },
+        Charset: { UTF_8: "UTF_8" },
+        computeHmacSha256Signature: (value, key) =>
+            [...crypto.createHmac("sha256", key).update(value, "utf8").digest()],
+        computeDigest: (algorithm, value) =>
+            [...crypto.createHash("md5").update(value, "utf8").digest()],
+    };
+}
+
+if (IS_NODE && require.main === module) {
+    if (!ACCOUNT_TOKEN) {
+        console.error("ACCOUNT_TOKEN is missing. Set it in .env (see README).");
+        process.exit(1);
+    }
+    installNodeGlobals();
+    main();
 }

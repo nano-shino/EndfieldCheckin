@@ -61,4 +61,19 @@ If you want to receive a notification on Discord when the script runs:
 
 **Q: How do I test if it works right now?** A: In the script editor, select the function **`main`** from the dropdown and click **Run**. Check the logs or your Discord channel for the result.
 
+### Running locally with Node (optional)
+
+The same `EndfieldAutoCheckIn.js` also runs on your computer with Node 21.7+ (or 20.12+):
+
+1.  Create a `.env` file next to the script:
+    ```
+    ACCOUNT_TOKEN=your_token_here
+    DISCORD_WEBHOOK_URL=optional_webhook_url
+    ```
+2.  Run `node EndfieldAutoCheckIn.js`.
+
+Google Apps Script users don't need `.env`. Paste the values into the script as described above.
+
+---
+
 **Q: How do I stop the script?** A: To stop it from running, go to the **Triggers** icon (alarm clock) on the left sidebar of the script editor and delete the trigger listed there.
